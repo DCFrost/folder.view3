@@ -44,15 +44,22 @@ const createFolders = async () => {
     if (FOLDER_VIEW_DEBUG_MODE) console.log('[FV2_DEBUG] createFolders: Order after inserting Unraid-ordered folders', [...order]);
 
 
-    const autostartOrder = Object.values(containersInfo).filter(el => !(el.info.State.Autostart===false)).sort((a, b) => {
-        if(a.info.State.Autostart < b.info.State.Autostart) {
+    const autostartOrder = Object.values(containersInfo).filter(el => {
+        // Safe null check for container info structure
+        return el && el.info && el.info.State && !(el.info.State.Autostart === false);
+    }).sort((a, b) => {
+        // Safe comparison with null checks
+        const aAutostart = (a && a.info && a.info.State) ? a.info.State.Autostart : false;
+        const bAutostart = (b && b.info && b.info.State) ? b.info.State.Autostart : false;
+        
+        if(aAutostart < bAutostart) {
           return -1;
         }
-          if(a.info.State.Autostart > b.info.State.Autostart) {
+        if(aAutostart > bAutostart) {
           return 1;
         }
-          return 0;
-    }).map(el => el.info.Name);
+        return 0;
+    }).map(el => (el && el.info) ? el.info.Name : 'unknown');
     if (FOLDER_VIEW_DEBUG_MODE) console.log('[FV2_DEBUG] createFolders: autostartOrder', autostartOrder);
 
 
@@ -404,7 +411,9 @@ const createFolder = (folder, id, positionInMainOrder, liveOrderArray, container
         if (!$containerTR.length || !$containerTR.hasClass('sortable')) {
             if(FOLDER_VIEW_DEBUG_MODE) console.log(`[FV2_DEBUG] createFolder (id: ${id}), container ${container_name_in_folder}: TR not found by ID or not sortable. Fallback search...`);
             $containerTR = $("#docker_list > tr.sortable").filter(function() {
-                return $(this).find("td.ct-name .appname a").text().trim() === container_name_in_folder;
+                const appnameWithLink = $(this).find("td.ct-name .appname a").text().trim();
+                const appnameWithoutLink = $(this).find("td.ct-name .appname").text().trim();
+                return appnameWithLink === container_name_in_folder || appnameWithoutLink === container_name_in_folder;
             }).first();
         }
 
@@ -487,7 +496,9 @@ const createFolder = (folder, id, positionInMainOrder, liveOrderArray, container
                  if (FOLDER_VIEW_DEBUG_MODE && charts.length > 0) console.log(`[FV2_DEBUG] graphListener (for ct: ${ct.shortId}): Updated ${charts.length} charts.`);
             };
 
-            const tooltip_trigger_element = addPreview(id, ct.shortId, !(ct.info.State.Autostart === false));
+            // Safe null check for container state access
+            const isAutostart = (ct && ct.info && ct.info.State && ct.info.State.Autostart !== false) ? true : false;
+            const tooltip_trigger_element = addPreview(id, ct.shortId, isAutostart);
             if (FOLDER_VIEW_DEBUG_MODE) console.log(`[FV2_DEBUG] createFolder (id: ${id}), container ${ct.shortId}: Called addPreview. Returned tooltip_trigger_element:`, tooltip_trigger_element ? tooltip_trigger_element[0] : 'null/undefined');
         
             $(`tr.folder-id-${id} div.folder-preview span.inner > span.appname`).css("width", folder.settings.preview_text_width || '');
@@ -762,14 +773,15 @@ const createFolder = (folder, id, positionInMainOrder, liveOrderArray, container
                                 <div class="preview-name">
                                     <div class="preview-img"><img src="${ct.Labels['net.unraid.docker.icon'] || ''}" class="img folder-img" onerror='this.src="/plugins/dynamix.docker.manager/images/question.png"'></div>
                                     <div class="preview-actual-name">
-                                        <span class="blue-text appname">${ct.info.Name}</span><br>
-                                        <i class="fa fa-${ct.info.State.Running ? (ct.info.State.Paused ? 'pause' : 'play') : 'square'} ${ct.info.State.Running ? (ct.info.State.Paused ? 'paused' : 'started') : 'stopped'} ${ct.info.State.Running ? (ct.info.State.Paused ? 'orange-text' : 'green-text') : 'red-text'}"></i>
-                                        <span class="state"> ${ct.info.State.Running ? (ct.info.State.Paused ? $.i18n('paused') : $.i18n('started')) : $.i18n('stopped')}</span>
+                                         <span class="blue-text appname">${(ct && ct.info && ct.info.Name) ? ct.info.Name : 'Unknown'}</span><br>
+                                         <i class="fa fa-${(ct && ct.info && ct.info.State && ct.info.State.Running) ? ((ct.info.State.Paused) ? 'pause' : 'play') : 'square'} ${(ct && ct.info && ct.info.State && ct.info.State.Running) ? ((ct.info.State.Paused) ? 'paused' : 'started') : 'stopped'} ${(ct && ct.info && ct.info.State && ct.info.State.Running) ? ((ct.info.State.Paused) ? 'orange-text' : 'green-text') : 'red-text'}"></i>
+                                         <span class="state"> ${(ct && ct.info && ct.info.State && ct.info.State.Running) ? ((ct.info.State.Paused) ? $.i18n('paused') : $.i18n('started')) : $.i18n('stopped')}</span>
                                     </div>
                                 </div>
                                 <table class="preview-status">
                                     <thead class="status-header"><tr><th class="status-header-version">${$.i18n('version')}</th><th class="status-header-stats">CPU/MEM</th><th class="status-header-autostart">${$.i18n('autostart')}</th></tr></thead>
                                     <tbody><tr>
+                                        <td><div class="status-version">${!ct.info.State.Updated === false ? `<span class="green-text folder-update-text"><i class="fa fa-check fa-fw"></i>${$.i18n('up-to-date')}</span>${ct.info.State.manager === 'dockerman' ? `<br><a class="exec" onclick="hideAllTips(); updateContainer('${ct.info.Name}');"><span style="white-space:nowrap;"><i class="fa fa-cloud-download fa-fw"></i>${$.i18n('force-update')}</span></a>` : ''}`:`<span class="orange-text folder-update-text" style="white-space:nowrap;"><i class="fa fa-flash fa-fw"></i>${$.i18n('update-ready')}</span><br><a class="exec" onclick="hideAllTips(); updateContainer('${ct.info.Name}');"><span style="white-space:nowrap;"><i class="fa fa-cloud-download fa-fw"></i>${$.i18n('apply-update')}</span></a>`}<br><i class="fa fa-info-circle fa-fw"></i> ${(ct && ct.info && ct.info.Config && ct.info.Config.Image) ? ct.info.Config.Image.split(':').pop() : ''}</div></td>
                                         <td><div class="status-version">${!ct.info.State.Updated === false ? `<span class="green-text folder-update-text"><i class="fa fa-check fa-fw"></i>${$.i18n('up-to-date')}</span>${ct.info.State.manager === 'dockerman' ? `<br><a class="exec" onclick="hideAllTips(); updateContainer('${ct.info.Name}');"><span style="white-space:nowrap;"><i class="fa fa-cloud-download fa-fw"></i>${$.i18n('force-update')}</span></a>` : ''}`:`<span class="orange-text folder-update-text" style="white-space:nowrap;"><i class="fa fa-flash fa-fw"></i>${$.i18n('update-ready')}</span><br><a class="exec" onclick="hideAllTips(); updateContainer('${ct.info.Name}');"><span style="white-space:nowrap;"><i class="fa fa-cloud-download fa-fw"></i>${$.i18n('apply-update')}</span></a>`}<br><i class="fa fa-info-circle fa-fw"></i> ${ct.info.Config.Image.split(':').pop()}</div></td>
                                         <td><div class="status-stats"><span class="cpu-${ct.shortId}">0%</span><div class="usage-disk mm"><span id="cpu-${ct.shortId}" style="width: 0%;"></span><span></span></div><br><span class="mem-${ct.shortId}">0 / 0</span></div></td>
                                         <td><div class="status-autostart"><input type="checkbox" style="display:none" class="staus-autostart-checkbox"></div></td>
@@ -885,7 +897,7 @@ const createFolder = (folder, id, positionInMainOrder, liveOrderArray, container
 
             if (folder.settings.preview_webui && ct.info.State.WebUi) {
                 if ($targetForAppend.length) {
-                    $targetForAppend.append($(`<span class="folder-element-custom-btn folder-element-webui"><a href="${ct.info.State.WebUi}" target="_blank"><i class="fa fa-globe" aria-hidden="true"></i></a></span>`));
+                    $targetForAppend.append($(`<span class="folder-element-custom-btn folder-element-webui"><a href="#" onclick="event.preventDefault(); window.open('${ct.info.State.WebUi}', '_blank'); return false;"><i class="fa fa-globe" aria-hidden="true"></i></a></span>`));
                     if (FOLDER_VIEW_DEBUG_MODE) console.log(`[FV2_DEBUG] createFolder (id: ${id}), container ${container_name_in_folder}: Appended WebUI icon to preview.`);
                 } else {
                      if (FOLDER_VIEW_DEBUG_MODE) console.warn(`[FV2_DEBUG] createFolder (id: ${id}), container ${container_name_in_folder}: WebUI icon: Could not find target for append in preview element.`);
@@ -994,11 +1006,30 @@ const createFolder = (folder, id, positionInMainOrder, liveOrderArray, container
     else if (managed > 0 && managed === Object.values(folder.containers).length) { $(`tr.folder-id-${id}`).addClass('managed-full'); }
     if (FOLDER_VIEW_DEBUG_MODE) console.log(`[FV2_DEBUG] createFolder (id: ${id}): Applied managed status class. Managed: ${managed}, Total: ${Object.values(folder.containers).length}.`);
 
-    folder.status = { upToDate, started, autostart, autostartStarted, managed, expanded: false };
+    // Restore folder expansion state from localStorage
+    let savedExpanded = false;
+    try {
+        const folderStates = JSON.parse(localStorage.getItem('folderView2_dockerStates') || '{}');
+        savedExpanded = folderStates[id] === true;
+        if (FOLDER_VIEW_DEBUG_MODE) console.log(`[FV2_DEBUG] createFolder (id: ${id}): Restored expanded state from localStorage: ${savedExpanded}`);
+    } catch (e) {
+        if (FOLDER_VIEW_DEBUG_MODE) console.warn(`[FV2_DEBUG] createFolder (id: ${id}): Failed to restore state from localStorage:`, e);
+    }
+
+    folder.status = { upToDate, started, autostart, autostartStarted, managed, expanded: savedExpanded };
     if (FOLDER_VIEW_DEBUG_MODE) console.log(`[FV2_DEBUG] createFolder (id: ${id}): Set final folder.status object:`, JSON.parse(JSON.stringify(folder.status)));
 
     $(`#folder-${id}-auto`).on("change", folderAutostart);
     if (FOLDER_VIEW_DEBUG_MODE) console.log(`[FV2_DEBUG] createFolder (id: ${id}): Attached 'change' event to folder autostart switch.`);
+    
+    // Auto-expand folder if it was previously expanded
+    if (savedExpanded) {
+        setTimeout(() => {
+            if (FOLDER_VIEW_DEBUG_MODE) console.log(`[FV2_DEBUG] createFolder (id: ${id}): Auto-expanding folder based on saved state.`);
+            dropDownButton(id);
+        }, 100); // Small delay to ensure DOM is ready
+    }
+    
     if (FOLDER_VIEW_DEBUG_MODE) console.log(`[FV2_DEBUG] createFolder (id: ${id}): Dispatching docker-post-folder-creation event.`);
     folderEvents.dispatchEvent(new CustomEvent('docker-post-folder-creation', {detail: {
         folder: folder,
@@ -1099,6 +1130,16 @@ const dropDownButton = (id) => {
     if(globalFolders[id]) {
         globalFolders[id].status.expanded = !state;
         if (FOLDER_VIEW_DEBUG_MODE) console.log(`[FV2_DEBUG] dropDownButton (id: ${id}): Updated globalFolders[${id}].status.expanded to ${!state}.`);
+        
+        // Persist folder expansion state to localStorage
+        try {
+            const folderStates = JSON.parse(localStorage.getItem('folderView2_dockerStates') || '{}');
+            folderStates[id] = !state;
+            localStorage.setItem('folderView2_dockerStates', JSON.stringify(folderStates));
+            if (FOLDER_VIEW_DEBUG_MODE) console.log(`[FV2_DEBUG] dropDownButton (id: ${id}): Persisted expanded state ${!state} to localStorage.`);
+        } catch (e) {
+            if (FOLDER_VIEW_DEBUG_MODE) console.warn(`[FV2_DEBUG] dropDownButton (id: ${id}): Failed to persist state to localStorage:`, e);
+        }
     } else {
         if (FOLDER_VIEW_DEBUG_MODE) console.warn(`[FV2_DEBUG] dropDownButton (id: ${id}): globalFolders[${id}] not found to update expanded status.`);
     }

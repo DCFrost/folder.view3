@@ -80,7 +80,16 @@ const createFolders = async () => {
 
     // Expand folders that are set to be expanded by default, this is here because is easier to work with all compressed folder when creating them
     for (const [id, value] of Object.entries(foldersDone)) {
-        if((globalFolders[id] && globalFolders[id].status.expanded) || value.settings.expand_tab) {
+        // Check localStorage for saved expansion state
+        let savedExpanded = false;
+        try {
+            const folderStates = JSON.parse(localStorage.getItem('folderView2_vmStates') || '{}');
+            savedExpanded = folderStates[id] === true;
+        } catch (e) {
+            // Silently handle localStorage errors
+        }
+        
+        if((globalFolders[id] && globalFolders[id].status.expanded) || value.settings.expand_tab || savedExpanded) {
             value.status.expanded = true;
             dropDownButton(id);
         }
@@ -131,8 +140,12 @@ const createFolder = (folder, id, position, order, vmInfo, foldersDone) => {
         folder.containers = folder.containers.concat(order.filter(el => regex.test(el)));
     }
 
+    // Calculate the correct colspan for VM table structure
+    const vmTableHeaders = document.querySelector("#kvm_table > thead > tr");
+    const vmColspan = vmTableHeaders ? vmTableHeaders.childElementCount - 3 : 5; // -3 for NAME, IP ADDRESS, AUTOSTART columns
+    
     // the HTML template for the folder
-    const fld = `<tr parent-id="${id}" class="sortable folder-id-${id} ${folder.settings.preview_hover ? 'hover' : ''} folder"><td class="vm-name folder-name"><div class="folder-name-sub"><i class="fa fa-arrows-v mover orange-text"></i><span class="outer folder-outer"><span id="${id}" onclick='addVMFolderContext("${id}")' class="hand folder-hand"><img src="${folder.icon}" class="img folder-img" onerror='this.src="/plugins/dynamix.docker.manager/images/question.png"'></span><span class="inner folder-inner"><a class="folder-appname" href="#" onclick='editFolder("${id}")'>${folder.name}</a><a class="folder-appname-id">folder-${id}</a><br><i id="load-folder-${id}" class="fa fa-square stopped red-text folder-load-status"></i><span class="state folder-state"> ${$.i18n('stopped')}</span></span></span><button class="dropDown-${id} folder-dropdown" onclick='dropDownButton("${id}")'><i class="fa fa-chevron-down" aria-hidden="true"></i></button></div></td><td colspan="5"><div class="folder-storage"></div><div class="folder-preview"></div></td><td class="folder-autostart"><input class="autostart" type="checkbox" id="folder-${id}-auto" style="display:none"></td></tr><tr child-id="${id}" id="name-${id}" style="display:none"><td colspan="8" style="margin:0;padding:0"></td></tr>`;
+    const fld = `<tr parent-id="${id}" class="sortable folder-id-${id} ${folder.settings.preview_hover ? 'hover' : ''} folder"><td class="vm-name folder-name"><div class="folder-name-sub"><i class="fa fa-arrows-v mover orange-text"></i><span class="outer folder-outer"><span id="${id}" onclick='addVMFolderContext("${id}")' class="hand folder-hand"><img src="${folder.icon}" class="img folder-img" onerror='this.src="/plugins/dynamix.docker.manager/images/question.png"'></span><span class="inner folder-inner"><a class="folder-appname" href="#" onclick='editFolder("${id}")'>${folder.name}</a><a class="folder-appname-id">folder-${id}</a><br><i id="load-folder-${id}" class="fa fa-square stopped red-text folder-load-status"></i><span class="state folder-state"> ${$.i18n('stopped')}</span></span></span><button class="dropDown-${id} folder-dropdown" onclick='dropDownButton("${id}")'><i class="fa fa-chevron-down" aria-hidden="true"></i></button></div></td><td colspan="${vmColspan}"><div class="folder-storage"></div><div class="folder-preview"></div></td><td class="folder-ip"></td><td class="folder-autostart"><input class="autostart" type="checkbox" id="folder-${id}-auto" style="display:none"></td></tr><tr child-id="${id}" id="name-${id}" style="display:none"><td colspan="${vmTableHeaders ? vmTableHeaders.childElementCount : 8}" style="margin:0;padding:0"></td></tr>`;
 
     // insertion at position of the folder
     if (position === 0) {
@@ -156,17 +169,23 @@ const createFolder = (folder, id, position, order, vmInfo, foldersDone) => {
     switch (folder.settings.preview) {
         case 1:
             addPreview = (id, autostart) => {
-                $(`tr.folder-id-${id} div.folder-preview`).append($(`tr.folder-id-${id} div.folder-storage > tr > td.vm-name > span.outer:last`).clone().addClass(`${autostart ? 'autostart' : ''}`));
+                let clonedElement = $(`tr.folder-id-${id} div.folder-storage > tr > td.vm-name > span.outer:last`).clone();
+                clonedElement.addClass(`${autostart ? 'autostart' : ''}`);
+                $(`tr.folder-id-${id} div.folder-preview`).append(clonedElement);
             };
             break;
         case 2:
             addPreview = (id, autostart) => {
-                $(`tr.folder-id-${id} div.folder-preview`).append($(`tr.folder-id-${id} div.folder-storage > tr > td.vm-name > span.outer > span.hand:last`).clone().addClass(`${autostart ? 'autostart' : ''}`));
+                let clonedElement = $(`tr.folder-id-${id} div.folder-storage > tr > td.vm-name > span.outer > span.hand:last`).clone();
+                clonedElement.addClass(`${autostart ? 'autostart' : ''}`);
+                $(`tr.folder-id-${id} div.folder-preview`).append(clonedElement);
             };
             break;
         case 3:
             addPreview = (id, autostart) => {
-                $(`tr.folder-id-${id} div.folder-preview`).append($(`tr.folder-id-${id} div.folder-storage > tr > td.vm-name > span.outer > span.inner:last`).clone().addClass(`${autostart ? 'autostart' : ''}`));
+                let clonedElement = $(`tr.folder-id-${id} div.folder-storage > tr > td.vm-name > span.outer > span.inner:last`).clone();
+                clonedElement.addClass(`${autostart ? 'autostart' : ''}`);
+                $(`tr.folder-id-${id} div.folder-preview`).append(clonedElement);
             };
             break;
         case 4:
@@ -177,7 +196,9 @@ const createFolder = (folder, id, position, order, vmInfo, foldersDone) => {
                     lstSpan = $(`tr.folder-id-${id} div.folder-preview > span.outer:last`);
                 }
                 lstSpan.append($('<span class="inner"></span>'));
-                lstSpan.children('span.inner:last').append($(`tr.folder-id-${id} div.folder-storage > tr > td.vm-name > span.outer > span.inner > a:last`).clone().addClass(`${autostart ? 'autostart' : ''}`))
+                let clonedElement = $(`tr.folder-id-${id} div.folder-storage > tr > td.vm-name > span.outer > span.inner > a:last`).clone();
+                clonedElement.addClass(`${autostart ? 'autostart' : ''}`);
+                lstSpan.children('span.inner:last').append(clonedElement);
             };
             break;
         default:
@@ -391,6 +412,15 @@ const dropDownButton = (id) => {
     }
     if(globalFolders[id]) {
         globalFolders[id].status.expanded = !state;
+        
+        // Persist VM folder expansion state to localStorage
+        try {
+            const folderStates = JSON.parse(localStorage.getItem('folderView2_vmStates') || '{}');
+            folderStates[id] = !state;
+            localStorage.setItem('folderView2_vmStates', JSON.stringify(folderStates));
+        } catch (e) {
+            // Silently handle localStorage errors
+        }
     }
     folderEvents.dispatchEvent(new CustomEvent('vm-post-folder-expansion', {detail: { id }}));
 };

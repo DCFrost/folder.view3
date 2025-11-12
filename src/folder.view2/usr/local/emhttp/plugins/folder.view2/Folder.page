@@ -15,7 +15,11 @@ Markdown="false"
 <link type="text/css" rel="stylesheet" href="<?autov('/webGui/styles/jquery.switchbutton.css')?>">
 <link type="text/css" rel="stylesheet" href="<?autov('/webGui/styles/jquery.ui.css')?>">
 <link type="text/css" rel="stylesheet" href="<?autov('/plugins/folder.view2/styles/folder.css')?>">
-<link type="text/css" rel="stylesheet" href="<?autov("/plugins/dynamix.docker.manager/styles/style-{$display['theme']}.css")?>">
+<?php
+$pageType = $_GET['type'] ?? 'docker';
+$managerPlugin = ($pageType === 'vm') ? 'dynamix.vm.manager' : 'dynamix.docker.manager';
+?>
+<link type="text/css" rel="stylesheet" href="<?autov("/plugins/{$managerPlugin}/styles/style-{$display['theme']}.css")?>">
 <link type="text/css" rel="stylesheet" href="<?autov("/plugins/folder.view2/styles/include/jquery.multiselect.css")?>">
 <script src="<?autov('/plugins/folder.view2/scripts/include/jquery.multiselect.js')?>"></script>
 

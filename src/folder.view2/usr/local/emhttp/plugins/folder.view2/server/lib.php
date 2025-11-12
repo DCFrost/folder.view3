@@ -145,6 +145,7 @@
                             'TSUrlRaw'          => trim($doc->getElementsByTagName('TailscaleWebUI')->item(0)->nodeValue ?? ''),
                             'TSServeMode'       => trim($doc->getElementsByTagName('TailscaleServe')->item(0)->nodeValue ?? 'no'),
                             'TSTailscaleEnabled'=> strtolower(trim($doc->getElementsByTagName('TailscaleEnabled')->item(0)->nodeValue ?? 'false')) === 'true',
+                            'Icon'              => trim($doc->getElementsByTagName('Icon')->item(0)->nodeValue ?? ''),
                             'registry'          => trim($doc->getElementsByTagName('Registry')->item(0)->nodeValue ?? ''),
                             'Support'           => trim($doc->getElementsByTagName('Support')->item(0)->nodeValue ?? ''),
                             'Project'           => trim($doc->getElementsByTagName('Project')->item(0)->nodeValue ?? ''),
@@ -186,12 +187,53 @@
                     $tsServeModeFromXml = $templateData['TSServeMode'];
                     $isTailscaleEnabledForContainer = $templateData['TSTailscaleEnabled'];
                     $ct['info']['registry'] = $templateData['registry']; $ct['info']['Support'] = $templateData['Support']; $ct['info']['Project'] = $templateData['Project']; $ct['info']['DonateLink'] = $templateData['DonateLink']; $ct['info']['ReadMe'] = $templateData['ReadMe']; $ct['info']['Shell'] = $templateData['Shell'] ?: 'sh'; $ct['info']['template'] = ['path' => $templateData['path']];
+                    
+                    // Set icon from template data
+                    $ct['info']['Icon'] = $templateData['Icon'] ?: '';
                 } else {
                     $rawWebUiString = $ct['Labels']['net.unraid.docker.webui'] ?? '';
                     $rawTsXmlUrl = $ct['Labels']['net.unraid.docker.tailscale.webui'] ?? '';
                     $tsServeModeFromXml = $ct['Labels']['net.unraid.docker.tailscale.servemode'] ?? ($ct['Labels']['net.unraid.docker.tailscale.funnel'] === 'true' ? 'funnel' : 'no');
                     $isTailscaleEnabledForContainer = strtolower($ct['Labels']['net.unraid.docker.tailscale.enabled'] ?? 'false') === 'true';
                     $ct['info']['Shell'] = $ct['Labels']['net.unraid.docker.shell'] ?? 'sh';
+                    
+                    // Set icon from container labels (fallback for Docker-Compose containers)
+                    $ct['info']['Icon'] = $ct['Labels']['net.unraid.docker.icon'] ?? '';
+                }
+                
+                // Additional fallback logic for icon handling
+                if (empty($ct['info']['Icon'])) {
+                    // Try to extract icon from other common label formats
+                    $iconFallbacks = [
+                        $ct['Labels']['org.opencontainers.image.icon'] ?? '',
+                        $ct['Labels']['icon'] ?? '',
+                        $ct['Labels']['docker.icon'] ?? ''
+                    ];
+                    
+                    foreach ($iconFallbacks as $fallbackIcon) {
+                        if (!empty($fallbackIcon)) {
+                            $ct['info']['Icon'] = $fallbackIcon;
+                            fv2_debug_log("  $containerName: Using fallback icon: '$fallbackIcon'");
+                            break;
+                        }
+                    }
+                    
+                    // If still no icon, try to generate one from the image name
+                    if (empty($ct['info']['Icon'])) {
+                        $imageName = $ct['info']['Config']['Image'] ?? '';
+                        if (!empty($imageName)) {
+                            // Extract base image name (remove registry and tag)
+                            $baseImageName = preg_replace('/^[^/]+//', '', $imageName); // Remove registry
+                            $baseImageName = preg_replace('/:.*$/', '', $baseImageName);   // Remove tag
+                            
+                            // Try to construct a Docker Hub icon URL
+                            if (!empty($baseImageName) && !strpos($baseImageName, '/')) {
+                                // Official images
+                                $ct['info']['Icon'] = "https://raw.githubusercontent.com/docker-library/docs/master/$baseImageName/logo.png";
+                                fv2_debug_log("  $containerName: Generated Docker Hub icon for official image: '{$ct['info']['Icon']}'");
+                            }
+                        }
+                    }
                 }
                 fv2_debug_log("  $containerName: Using ".($templateData && $ct['info']['State']['manager'] == 'dockerman' ? "XML" : "Label")." data. TailscaleEnabled: " . ($isTailscaleEnabledForContainer ? 'true' : 'false'));
                 fv2_debug_log("    $containerName: Raw WebUI: '$rawWebUiString', Raw TS XML URL: '$rawTsXmlUrl', TS Serve Mode: '$tsServeModeFromXml'");
@@ -233,7 +275,7 @@
                             ];
                         }
                     }
-                } elseif (isset($ct['info']['Config']['ExposedPorts']) && is_array($ct['info']['Config']['ExposedPorts'])) {
+                } elseif (isset($ct['info']['Config']['ExposedPorts']) && is_array($ct['info']['Config']['ExposedPorts']) && !empty($ct['info']['Config']['ExposedPorts'])) {
                     fv2_debug_log("  $containerName: Processing Config.ExposedPorts (Network: $currentNetworkMode)...");
                     foreach ($ct['info']['Config']['ExposedPorts'] as $containerPortProtocol => $emptyValue) {
                         list($privatePort, $protocol) = explode('/', $containerPortProtocol);
@@ -244,6 +286,41 @@
 
                         if ($currentNetworkMode === 'host') {
                             $effectiveIp = $host;
+                        } elseif (strpos($currentNetworkMode, 'container:') === 0) {
+                            // Handle container: network mode by resolving target container's IP
+                            $targetContainerName = substr($currentNetworkMode, 10); // Remove 'container:' prefix
+                            fv2_debug_log("  $containerName: Port mapping for container network mode, target: '$targetContainerName'");
+                            
+                            // Find the target container and get its network information
+                            $targetContainerIp = null;
+                            foreach ($cts as $targetCt) {
+                                $targetName = substr($targetCt['info']['Name'] ?? '', 1); // Remove leading slash
+                                if ($targetName === $targetContainerName) {
+                                    $targetNetworkMode = $targetCt['info']['HostConfig']['NetworkMode'] ?? 'unknown';
+                                    if ($targetNetworkMode === 'host') {
+                                        $targetContainerIp = $host;
+                                    } else {
+                                        $targetNetworkDriver = $driver[$targetNetworkMode] ?? null;
+                                        if ($targetNetworkDriver !== 'bridge') {
+                                            $targetNetworkSettings = $targetCt['info']['NetworkSettings']['Networks'][$targetNetworkMode] ?? null;
+                                            if ($targetNetworkSettings && !empty($targetNetworkSettings['IPAddress'])) {
+                                                $targetContainerIp = $targetNetworkSettings['IPAddress'];
+                                            }
+                                        } else {
+                                            $targetContainerIp = $host; // Use host IP for bridge networks
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
+                            
+                            if ($targetContainerIp) {
+                                $effectiveIp = $targetContainerIp;
+                                fv2_debug_log("  $containerName: Port mapping resolved target container IP: '$targetContainerIp'");
+                            } else {
+                                fv2_debug_log("  $containerName: Port mapping could not resolve target container '$targetContainerName' IP, using host IP");
+                                $effectiveIp = $host;
+                            }
                         } elseif ($currentNetworkMode !== 'none' && $containerIpAddress) {
                             $effectiveIp = $containerIpAddress;
                         }
@@ -258,6 +335,39 @@
                             'Type'        => $protocol
                         ];
                      }
+                } else {
+                    // Handle cases where containers don't have PortBindings or ExposedPorts
+                    // This is common for host network mode containers that don't explicitly define exposed ports
+                    if ($currentNetworkMode === 'host') {
+                        fv2_debug_log("  $containerName: Host network mode with no explicit port bindings or exposed ports.");
+                        
+                        // Try to extract port information from WebUI configuration
+                        if (!empty($rawWebUiString) && preg_match('/\[PORT:(\d+)\]/', $rawWebUiString, $matches)) {
+                            $extractedPort = $matches[1];
+                            fv2_debug_log("  $containerName: Extracted port $extractedPort from WebUI configuration for host network mode.");
+                            
+                            $ct['info']['Ports'][] = [
+                                'PrivateIP'   => $host,
+                                'PrivatePort' => $extractedPort,
+                                'PublicIP'    => $host,
+                                'PublicPort'  => $extractedPort,
+                                'NAT'         => false,
+                                'Type'        => 'TCP'
+                            ];
+                        } elseif (!empty($rawWebUiString) && preg_match('/:([0-9]+)/', $rawWebUiString, $matches)) {
+                            $extractedPort = $matches[1];
+                            fv2_debug_log("  $containerName: Extracted port $extractedPort from WebUI URL for host network mode.");
+                            
+                            $ct['info']['Ports'][] = [
+                                'PrivateIP'   => $host,
+                                'PrivatePort' => $extractedPort,
+                                'PublicIP'    => $host,
+                                'PublicPort'  => $extractedPort,
+                                'NAT'         => false,
+                                'Type'        => 'TCP'
+                            ];
+                        }
+                    }
                 }
                 
                 if ($currentNetworkMode === 'none') {
@@ -289,8 +399,47 @@
                         $webUiIp = $host; 
                         if ($currentNetworkMode === 'host') { $webUiIp = $host; } 
                         elseif ($currentNetworkDriver !== 'bridge' && $containerIpAddress) { $webUiIp = $containerIpAddress; }
-                        if (strpos($currentNetworkMode, 'container:') === 0 || $currentNetworkMode === 'none') { $finalWebUi = ''; } 
-                        else {
+                        
+                        // Handle container: network mode by resolving target container's network
+                        if (strpos($currentNetworkMode, 'container:') === 0) {
+                            $targetContainerName = substr($currentNetworkMode, 10); // Remove 'container:' prefix
+                            fv2_debug_log("  $containerName: Using container network mode, target: '$targetContainerName'");
+                            
+                            // Find the target container and get its network information
+                            $targetContainerIp = null;
+                            foreach ($cts as $targetCt) {
+                                $targetName = substr($targetCt['info']['Name'] ?? '', 1); // Remove leading slash
+                                if ($targetName === $targetContainerName) {
+                                    $targetNetworkMode = $targetCt['info']['HostConfig']['NetworkMode'] ?? 'unknown';
+                                    if ($targetNetworkMode === 'host') {
+                                        $targetContainerIp = $host;
+                                    } else {
+                                        $targetNetworkDriver = $driver[$targetNetworkMode] ?? null;
+                                        if ($targetNetworkDriver !== 'bridge') {
+                                            $targetNetworkSettings = $targetCt['info']['NetworkSettings']['Networks'][$targetNetworkMode] ?? null;
+                                            if ($targetNetworkSettings && !empty($targetNetworkSettings['IPAddress'])) {
+                                                $targetContainerIp = $targetNetworkSettings['IPAddress'];
+                                            }
+                                        } else {
+                                            $targetContainerIp = $host; // Use host IP for bridge networks
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
+                            
+                            if ($targetContainerIp) {
+                                $webUiIp = $targetContainerIp;
+                                fv2_debug_log("  $containerName: Resolved target container IP: '$targetContainerIp'");
+                            } else {
+                                fv2_debug_log("  $containerName: Could not resolve target container '$targetContainerName' IP, using host IP");
+                                $webUiIp = $host;
+                            }
+                        } elseif ($currentNetworkMode === 'none') { 
+                            $finalWebUi = ''; 
+                        }
+                        
+                        if ($currentNetworkMode !== 'none') {
                             $tempWebUi = str_replace("[IP]", $webUiIp ?: '', $rawWebUiString);
                             if (preg_match("%\[PORT:(\d+)\]%", $tempWebUi, $matches)) {
                                 $internalPortFromTemplate = $matches[1]; $mappedPublicPort = $internalPortFromTemplate; 

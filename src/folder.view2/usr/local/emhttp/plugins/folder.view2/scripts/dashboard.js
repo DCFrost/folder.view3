@@ -98,6 +98,11 @@ const createFolders = async () => {
             }
         }
 
+        const $ungroupedDockerContainers = $('tbody#docker_view > tr.updated > td > span.outer.apps').not('.folder-element-docker');
+        if ($ungroupedDockerContainers.length > 0) {
+            $ungroupedDockerContainers.show();
+        }
+        
         folderEvents.dispatchEvent(new CustomEvent('docker-post-folders-creation', {detail: {
             folders: folders,
             order: order,
@@ -204,6 +209,39 @@ const createFolders = async () => {
             }
         }
 
+        const $ungroupedVMContainers = $('tbody#vm_view > tr.updated > td > span.outer.vms').not('.folder-element-vm');
+        if ($ungroupedVMContainers.length > 0) {
+            $ungroupedVMContainers.show();
+        }
+        
+        const $ungroupedDockerContainers = $('tbody#docker_view > tr.updated > td > span.outer.apps').not('.folder-element-docker');
+        
+        if ($ungroupedDockerContainers.length > 0) {
+            const dockerUngroupedContainer = $('<div class="ungrouped-sections-container"></div>');
+            const dockerSection = $('<div class="ungrouped-section"></div>');
+            const dockerHeader = $('<h3>Ungrouped Docker Containers</h3>');
+            const dockerContainers = $('<div class="ungrouped-containers"></div>');
+            
+            dockerContainers.append($ungroupedDockerContainers.detach());
+            dockerSection.append(dockerHeader).append(dockerContainers);
+            dockerUngroupedContainer.append(dockerSection);
+            
+            $('tbody#docker_view > tr.updated > td').append(dockerUngroupedContainer);
+        }
+        
+        if ($ungroupedVMContainers.length > 0) {
+            const vmUngroupedContainer = $('<div class="ungrouped-sections-container"></div>');
+            const vmSection = $('<div class="ungrouped-section"></div>');
+            const vmHeader = $('<h3>Ungrouped Virtual Machines</h3>');
+            const vmContainers = $('<div class="ungrouped-containers"></div>');
+            
+            vmContainers.append($ungroupedVMContainers.detach());
+            vmSection.append(vmHeader).append(vmContainers);
+            vmUngroupedContainer.append(vmSection);
+            
+            $('tbody#vm_view > tr.updated > td').append(vmUngroupedContainer);
+        }
+        
         folderEvents.dispatchEvent(new CustomEvent('vm-post-folders-creation', {detail: {
             folders: folders,
             order: order,
@@ -213,7 +251,7 @@ const createFolders = async () => {
         globalFolders.vms = foldersDone;
     }
 
-    folderDebugMode  = false;
+    // folderDebugMode  = false; // Keep disabled
 };
 
 /**
@@ -253,8 +291,24 @@ const createFolderDocker = (folder, id, position, order, containersInfo, folders
 
     folder.containers = folder.containers.concat(order.filter(el => containersInfo[el]?.Labels['folder.view2'] === folder.name));
 
-    // the HTML template for the folder
-    const fld = `<div class="folder-showcase-outer-${id} folder-showcase-outer"><span class="outer solid apps stopped folder-docker"><span id="folder-id-${id}" onclick='addDockerFolderContext("${id}")' class="hand docker folder-hand-docker"><img src="${folder.icon}" class="img folder-img-docker" onerror="this.src='/plugins/dynamix.docker.manager/images/question.png';"></span><span class="inner folder-inner-docker"><span class="folder-appname-docker">${folder.name}</span><br><i class="fa fa-square stopped red-text folder-load-status-docker"></i><span class="state folder-state-docker">${$.i18n('stopped')}</span></span><div class="folder-storage"></div></span><div class="folder-showcase-${id} folder-showcase"></div></div>`;
+    // the HTML template for the folder with preview area
+    const fld = `<div class="folder-showcase-outer-${id} folder-showcase-outer">
+        <span class="outer solid apps stopped folder-docker">
+            <span id="folder-id-${id}" onclick='addDockerFolderContext("${id}")' class="hand docker folder-hand-docker">
+                <img src="${folder.icon}" class="img folder-img-docker" onerror="this.src='/plugins/dynamix.docker.manager/images/question.png';">
+            </span>
+            <span class="inner folder-inner-docker">
+                <span class="folder-appname-docker">${folder.name}</span><br>
+                <i class="fa fa-square stopped red-text folder-load-status-docker"></i>
+                <span class="state folder-state-docker">${$.i18n('stopped')}</span>
+            </span>
+            <div class="folder-storage"></div>
+        </span>
+        <div class="folder-content-container">
+            <div class="folder-preview-area" id="folder-preview-${id}"></div>
+            <div class="folder-showcase-${id} folder-showcase"></div>
+        </div>
+    </div>`;
 
     // insertion at position of the folder
     if (position === 0) {
@@ -305,10 +359,96 @@ const createFolderDocker = (folder, id, position, order, containersInfo, folders
             order.splice(offsetIndex, 1);
             const ct = containersInfo[container];
 
+            let $dockerElement = null;
+            
+            // Debug: Let's see what the actual DOM structure looks like
+            if(folderDebugMode) {
+                console.log(`[FV2_DEBUG] Docker createFolder (id: ${id}): === DOM STRUCTURE ANALYSIS START ===`);
+                console.log(`[FV2_DEBUG] Docker createFolder (id: ${id}): Looking for container '${container}'`);
+                console.log(`[FV2_DEBUG] Docker createFolder (id: ${id}): tbody#docker_view exists: ${$('tbody#docker_view').length > 0}`);
+                console.log(`[FV2_DEBUG] Docker createFolder (id: ${id}): tr.updated exists: ${$('tbody#docker_view > tr.updated').length}`);
+                console.log(`[FV2_DEBUG] Docker createFolder (id: ${id}): td elements: ${$('tbody#docker_view > tr.updated > td').length}`);
+                console.log(`[FV2_DEBUG] Docker createFolder (id: ${id}): .outer.apps elements: ${$('tbody#docker_view > tr.updated > td').children('.outer.apps').length}`);
+                console.log(`[FV2_DEBUG] Docker createFolder (id: ${id}): .outer elements: ${$('tbody#docker_view > tr.updated > td').children('.outer').length}`);
+                console.log(`[FV2_DEBUG] Docker createFolder (id: ${id}): All children: ${$('tbody#docker_view > tr.updated > td').children().length}`);
+                
+                // Let's see what classes and text the children actually have
+                $('tbody#docker_view > tr.updated > td').children().each(function(index) {
+                    const $this = $(this);
+                    const classes = $this.attr('class') || 'no-class';
+                    const text = $this.text().trim().substring(0, 100);
+                    const tagName = $this.prop('tagName');
+                    console.log(`[FV2_DEBUG] Docker createFolder (id: ${id}): Child[${index}] <${tagName}> classes='${classes}' text='${text}'`);
+                    
+                    // Look for container names in different locations
+                    const appname = $this.find('.appname').text().trim();
+                    const inner = $this.find('.inner').text().trim();
+                    if(appname) console.log(`[FV2_DEBUG] Docker createFolder (id: ${id}): Child[${index}] .appname='${appname}'`);
+                    if(inner) console.log(`[FV2_DEBUG] Docker createFolder (id: ${id}): Child[${index}] .inner='${inner.substring(0, 50)}'`);
+                });
+                console.log(`[FV2_DEBUG] Docker createFolder (id: ${id}): === DOM STRUCTURE ANALYSIS END ===`);
+            }
+            
+            // Search through all Docker elements in the dashboard to find the one matching this container name
+            $('tbody#docker_view > tr.updated > td').children('.outer.apps').each(function() {
+                const $this = $(this);
+                // Extract container name from .inner text by removing status suffixes
+                const innerText = $this.find('.inner').first().text().trim();
+                let containerNameElement = '';
+                
+                // Remove common status suffixes to get the actual container name
+                if (innerText.endsWith('started')) {
+                    containerNameElement = innerText.replace(/started$/, '');
+                } else if (innerText.endsWith('stopped')) {
+                    containerNameElement = innerText.replace(/stopped$/, '');
+                } else {
+                    containerNameElement = innerText;
+                }
+                
+                if(folderDebugMode) {
+                    console.log(`[FV2_DEBUG] Docker createFolder (id: ${id}): Extracted container name '${containerNameElement}' from inner text '${innerText}' - comparing against target '${container}'`);
+                }
+                
+                if (containerNameElement === container) {
+                    $dockerElement = $this;
+                    if(folderDebugMode) {
+                        console.log(`[FV2_DEBUG] Docker createFolder (id: ${id}): MATCH FOUND for container '${container}'`);
+                    }
+                    return false; // Break the loop
+                }
+            });
+            
             // grab the storage folder
             const element = $(`tbody#docker_view span#folder-id-${id}`).siblings('div.folder-storage');
-            // grab the container and put it onto the storage
-            element.append($('tbody#docker_view > tr.updated > td').children().eq(index).addClass(`folder-${id}-element`).addClass(`folder-element-docker`).addClass(`${!(ct.info.State.Autostart === false) ? 'autostart' : ''}`));
+            
+            if ($dockerElement && $dockerElement.length) {
+                if(folderDebugMode) {
+                    console.log(`[FV2_DEBUG] Docker createFolder (id: ${id}), container ${container}: Found Docker element, moving to folder storage.`);
+                }
+                // Move the Docker element to folder storage
+                element.append(
+                    $dockerElement.addClass(`folder-${id}-element`).addClass(`folder-element-docker`).addClass(`${!(ct.info.State.Autostart === false) ? 'autostart' : ''}`)
+                );
+                
+                // Add to preview area (show first 3 containers)
+                const previewArea = $(`#folder-preview-${id}`);
+                const currentPreviews = previewArea.children('.folder-container-preview').length;
+                
+                if (currentPreviews < 3) {
+                    // Clone the container for preview
+                    const $previewElement = $dockerElement.clone()
+                        .removeClass(`folder-${id}-element folder-element-docker`)
+                        .addClass('folder-container-preview')
+                        .attr('id', `preview-${$dockerElement.attr('id') || container}-preview`);
+                    previewArea.append($previewElement);
+                }
+            } else {
+                if(folderDebugMode) {
+                    console.warn(`[FV2_DEBUG] Docker createFolder (id: ${id}), container ${container}: Docker element not found in DOM! Using fallback index method.`);
+                }
+                // Fallback to original index method if name-based selection fails
+                element.append($('tbody#docker_view > tr.updated > td').children().eq(index).addClass(`folder-${id}-element`).addClass(`folder-element-docker`).addClass(`${!(ct.info.State.Autostart === false) ? 'autostart' : ''}`));
+            }
             
 
             newFolder[container] = {};
@@ -387,6 +527,16 @@ const createFolderDocker = (folder, id, position, order, containersInfo, folders
         $(`.folder-showcase-outer-${id}, .folder-showcase-outer-${id} > span.outer`).addClass('managed-full');
     }
 
+    // Restore Docker folder expansion state from localStorage
+    let savedExpanded = false;
+    try {
+        const folderStates = JSON.parse(localStorage.getItem('folderView2_dockerStates') || '{}');
+        savedExpanded = folderStates[id] === true;
+        console.log(`[FV2_DEBUG] createFolderDocker (id: ${id}): Restored expanded state from localStorage: ${savedExpanded}`);
+    } catch (e) {
+        console.warn(`[FV2_DEBUG] createFolderDocker (id: ${id}): Failed to restore state from localStorage:`, e);
+    }
+
     // set the status
     folder.status = {};
     folder.status.upToDate = upToDate;
@@ -394,7 +544,31 @@ const createFolderDocker = (folder, id, position, order, containersInfo, folders
     folder.status.autostart = autostart;
     folder.status.autostartStarted = autostartStarted;
     folder.status.managed = managed;
-    folder.status.expanded = false;
+    folder.status.expanded = savedExpanded;
+
+    // Add "+" indicator only if there are MORE than 3 containers in the folder
+    const totalContainers = Object.keys(folder.containers).length;
+    const previewArea = $(`#folder-preview-${id}`);
+    
+    // Always clean up any existing indicators first
+    previewArea.find('.folder-more-indicator').remove();
+    
+    // Only add + indicator if there are MORE than 3 containers
+    if (totalContainers > 3) {
+        const moreIndicator = $('<span class="folder-more-indicator" onclick="expandFolderDocker(\'' + id + '\')" title="Click to expand folder">+</span>');
+        previewArea.append(moreIndicator);
+        console.log(`[FV2] Docker folder ${id}: ${totalContainers} containers, showing + indicator`);
+    } else {
+        console.log(`[FV2] Docker folder ${id}: ${totalContainers} containers, no + indicator needed`);
+    }
+    
+    // Auto-expand Docker folder if it was previously expanded
+    if (savedExpanded) {
+        setTimeout(() => {
+            console.log(`[FV2_DEBUG] createFolderDocker (id: ${id}): Auto-expanding Docker folder based on saved state.`);
+            expandFolderDocker(id);
+        }, 100); // Small delay to ensure DOM is ready
+    }
 
     folderEvents.dispatchEvent(new CustomEvent('docker-post-folder-creation', {detail: {
         folder: folder,
@@ -441,8 +615,23 @@ const createFolderVM = (folder, id, position, order, vmInfo, foldersDone) => {
         folder.containers = folder.containers.concat(order.filter(el => regex.test(el)));
     }
 
-    // the HTML template for the folder
-    const fld = `<div class="folder-showcase-outer-${id} folder-showcase-outer"><span class="outer solid vms stopped folder-vm"><span id="folder-id-${id}" onclick='addVMFolderContext("${id}")' class="hand vm folder-hand-vm"><img src="${folder.icon}" class="img" onerror='this.src="/plugins/dynamix.docker.manager/images/question.png"'></span><span class="inner folder-inner-vm">${folder.name}<br><i class="fa fa-square stopped red-text folder-load-status-vm"></i><span class="state folder-state-vm">${$.i18n('stopped')}</span></span><div class="folder-storage" style="display:none"></div></span><div class="folder-showcase-${id} folder-showcase"></div></div>`;
+    // the HTML template for the folder with preview area
+    const fld = `<div class="folder-showcase-outer-${id} folder-showcase-outer">
+        <span class="outer solid vms stopped folder-vm">
+            <span id="folder-id-${id}" onclick='addVMFolderContext("${id}")' class="hand vm folder-hand-vm">
+                <img src="${folder.icon}" class="img" onerror='this.src="/plugins/dynamix.docker.manager/images/question.png"'>
+            </span>
+            <span class="inner folder-inner-vm">${folder.name}<br>
+                <i class="fa fa-square stopped red-text folder-load-status-vm"></i>
+                <span class="state folder-state-vm">${$.i18n('stopped')}</span>
+            </span>
+            <div class="folder-storage"></div>
+        </span>
+        <div class="folder-content-container">
+            <div class="folder-preview-area" id="folder-preview-${id}"></div>
+            <div class="folder-showcase-${id} folder-showcase"></div>
+        </div>
+    </div>`;
 
     // insertion at position of the folder
     if (position === 0) {
@@ -482,6 +671,9 @@ const createFolderVM = (folder, id, position, order, vmInfo, foldersDone) => {
         }}));
 
         if (index > -1) {
+            if(folderDebugMode) {
+                console.log(`[FV2_DEBUG] VM createFolder (id: ${id}), container ${container}: Processing - index=${index}, offsetIndex=${offsetIndex}, position=${position}`);
+            }
 
             // Keep track of removed elements before the folder to set back the for loop for creating folders, otherwise folder will be skipped
             if(offsetIndex < position) {
@@ -498,8 +690,61 @@ const createFolderVM = (folder, id, position, order, vmInfo, foldersDone) => {
             newFolder[container].id = ct.uuid;
             newFolder[container].state = ct.state;
 
-            // grab the container and put it onto the storage
-            $(`tbody#vm_view span#folder-id-${id}`).siblings('div.folder-storage').append($('tbody#vm_view > tr.updated > td').children().eq(index).addClass(`folder-${id}-element`).addClass(`folder-element-vm`).addClass(`${ct.autostart ? 'autostart' : ''}`));
+            // Find the correct VM element by name in the dashboard structure
+            let $vmElement = null;
+            
+            // Search through all VM elements in the dashboard to find the one matching this container name
+            $('tbody#vm_view > tr.updated > td').children('.outer.vms').each(function() {
+                const $this = $(this);
+                const vmInnerText = $this.find('.inner').first().text().trim();
+                // Extract VM name by removing status suffixes (similar to Docker logic)
+                const vmNameElement = vmInnerText.replace(/started$|stopped$|paused$/i, '').trim();
+                
+                if(folderDebugMode) {
+                    console.log(`[FV2_DEBUG] VM createFolder (id: ${id}), container ${container}: Checking VM element - inner text='${vmInnerText}', extracted name='${vmNameElement}', comparing against target '${container}'`);
+                }
+                
+                if (vmNameElement === container) {
+                    $vmElement = $this;
+                    return false; // Break the loop
+                }
+            });
+            
+            if ($vmElement && $vmElement.length) {
+                if(folderDebugMode) {
+                    console.log(`[FV2_DEBUG] VM createFolder (id: ${id}), container ${container}: Found VM element, moving to folder storage.`);
+                }
+                
+                // Add to preview area FIRST (show first 3 VMs) - clone before moving to storage
+                const previewArea = $(`#folder-preview-${id}`);
+                const currentPreviews = previewArea.children('.folder-container-preview').length;
+                
+                if (currentPreviews < 3) {
+                    // Clone the VM for preview BEFORE moving original to storage
+                    const $previewElement = $vmElement.clone()
+                        .addClass('folder-container-preview')
+                        .attr('id', `preview-${$vmElement.attr('id') || container}-preview`);
+                    previewArea.append($previewElement);
+                    
+                    if(folderDebugMode) {
+                        console.log(`[FV2_DEBUG] VM createFolder (id: ${id}), container ${container}: Added VM to preview area (${currentPreviews + 1}/3).`);
+                    }
+                }
+                
+                // Now move the original VM element to folder storage (hidden)
+                $(`tbody#vm_view span#folder-id-${id}`).siblings('div.folder-storage').append(
+                    $vmElement.addClass(`folder-${id}-element`).addClass(`folder-element-vm`).addClass(`${ct.autostart ? 'autostart' : ''}`)
+                );
+                
+                // Check if we need to add/update the "+" indicator after processing all VMs
+                // This will be handled in the folder completion logic
+            } else {
+                if(folderDebugMode) {
+                    console.warn(`[FV2_DEBUG] VM createFolder (id: ${id}), container ${container}: VM element not found in DOM! Using fallback index method.`);
+                }
+                // Fallback to original index method if name-based selection fails
+                $(`tbody#vm_view span#folder-id-${id}`).siblings('div.folder-storage').append($('tbody#vm_view > tr.updated > td').children().eq(index).addClass(`folder-${id}-element`).addClass(`folder-element-vm`).addClass(`${ct.autostart ? 'autostart' : ''}`));
+            }
 
             if(folderDebugMode) {
                 console.log(`VM ${newFolder[container].id}(${offsetIndex}, ${index}) => ${id}`);
@@ -552,12 +797,46 @@ const createFolderVM = (folder, id, position, order, vmInfo, foldersDone) => {
         $(`.folder-showcase-outer-${id}, .folder-showcase-outer-${id} > span.outer`).addClass('autostart-full');
     }
 
+    // Restore VM folder expansion state from localStorage
+    let savedExpanded = false;
+    try {
+        const folderStates = JSON.parse(localStorage.getItem('folderView2_vmStates') || '{}');
+        savedExpanded = folderStates[id] === true;
+        console.log(`[FV2_DEBUG] createFolderVM (id: ${id}): Restored expanded state from localStorage: ${savedExpanded}`);
+    } catch (e) {
+        console.warn(`[FV2_DEBUG] createFolderVM (id: ${id}): Failed to restore state from localStorage:`, e);
+    }
+
+    // Add "+" indicator only if there are MORE than 3 VMs in the folder
+    const totalVMs = Object.keys(folder.containers).length;
+    const previewArea = $(`#folder-preview-${id}`);
+    
+    // Always clean up any existing indicators first
+    previewArea.find('.folder-more-indicator').remove();
+    
+    // Only add + indicator if there are MORE than 3 VMs
+    if (totalVMs > 3) {
+        const moreIndicator = $('<span class="folder-more-indicator" onclick="expandFolderVM(\'' + id + '\')" title="Click to expand folder">+</span>');
+        previewArea.append(moreIndicator);
+        console.log(`[FV2] VM folder ${id}: ${totalVMs} VMs, showing + indicator`);
+    } else {
+        console.log(`[FV2] VM folder ${id}: ${totalVMs} VMs, no + indicator needed`);
+    }
+    
     // set the status
     folder.status = {};
     folder.status.started = started;
     folder.status.autostart = autostart;
     folder.status.autostartStarted = autostartStarted;
-    folder.status.expanded = false;
+    folder.status.expanded = savedExpanded;
+    
+    // Auto-expand VM folder if it was previously expanded
+    if (savedExpanded) {
+        setTimeout(() => {
+            console.log(`[FV2_DEBUG] createFolderVM (id: ${id}): Auto-expanding VM folder based on saved state.`);
+            expandFolderVM(id);
+        }, 100); // Small delay to ensure DOM is ready
+    }
 
     folderEvents.dispatchEvent(new CustomEvent('vm-post-folder-creation', {detail: {
         folder: folder,
@@ -577,18 +856,60 @@ const createFolderVM = (folder, id, position, order, vmInfo, foldersDone) => {
  */
 const expandFolderDocker = (id) => {
     folderEvents.dispatchEvent(new CustomEvent('docker-pre-folder-expansion', {detail: { id }}));
-    const el = $(`tbody#docker_view > tr.updated > td span.outer.apps > span#folder-id-${id}`);
-    const state = el.attr('expanded') === "true";
-    if (state) {
-        el.siblings('div.folder-storage').append(el.parents().siblings('div.folder-showcase').children());
-        el.attr('expanded', 'false');
-    } else {
-        el.parents().siblings('div.folder-showcase').append(el.siblings('div.folder-storage').children());
-        el.attr('expanded', 'true');
+    const $folderOuter = $(`.folder-showcase-outer-${id}`);
+    const $folderShowcase = $(`.folder-showcase-${id}`);
+    const $folderStorage = $(`span#folder-id-${id}`).siblings('div.folder-storage');
+    const state = $folderOuter.attr('expanded') === "true";
+    
+    if(folderDebugMode) {
+        console.log(`[FV2_DEBUG] expandFolderDocker (id: ${id}): Current state=${state}, toggling to ${!state}`);
     }
-    $(`tbody#docker_view .folder-showcase-outer-${id}`).attr('expanded', !state ? 'true' : 'false');
+    
+    if (state) {
+        // Collapsing: Move containers back to storage and hide showcase
+        $folderStorage.append($folderShowcase.children());
+        $folderOuter.attr('expanded', 'false');
+        $(`span#folder-id-${id}`).attr('expanded', 'false');
+        
+        // Change indicator back to "+" and move to preview area
+        const $previewArea = $(`#folder-preview-${id}`);
+        const $contractIndicator = $folderShowcase.find('.folder-contract-indicator');
+        if ($contractIndicator.length) {
+            $contractIndicator.remove();
+        }
+        // Restore "+" indicator only if there are MORE than 3 containers (not exactly 3)
+        if ($folderStorage.children().length > 3 && !$previewArea.find('.folder-more-indicator').length) {
+            const moreIndicator = $('<span class="folder-more-indicator" onclick="expandFolderDocker(\'' + id + '\')" title="Click to expand folder">+</span>');
+            $previewArea.append(moreIndicator);
+        }
+    } else {
+        // Expanding: Move all containers from storage to showcase
+        $folderShowcase.append($folderStorage.children());
+        $folderOuter.attr('expanded', 'true');
+        $(`span#folder-id-${id}`).attr('expanded', 'true');
+        
+        // Add "-" indicator to contract in the showcase area
+        if (!$folderShowcase.find('.folder-contract-indicator').length) {
+            const contractIndicator = $('<span class="folder-contract-indicator folder-more-indicator" onclick="expandFolderDocker(\'' + id + '\')" title="Click to contract folder">-</span>');
+            $folderShowcase.append(contractIndicator);
+        }
+        
+        // Remove "+" indicator from preview area
+        $(`#folder-preview-${id} .folder-more-indicator`).remove();
+    }
+    
     if(globalFolders.docker) {
         globalFolders.docker[id].status.expanded = !state;
+        
+        // Persist Docker folder expansion state to localStorage
+        try {
+            const folderStates = JSON.parse(localStorage.getItem('folderView2_dockerStates') || '{}');
+            folderStates[id] = !state;
+            localStorage.setItem('folderView2_dockerStates', JSON.stringify(folderStates));
+            console.log(`[FV2_DEBUG] expandFolderDocker (id: ${id}): Persisted expanded state ${!state} to localStorage.`);
+        } catch (e) {
+            console.warn(`[FV2_DEBUG] expandFolderDocker (id: ${id}): Failed to persist state to localStorage:`, e);
+        }
     }
     folderEvents.dispatchEvent(new CustomEvent('docker-post-folder-expansion', {detail: { id }}));
 };
@@ -599,18 +920,60 @@ const expandFolderDocker = (id) => {
  */
 const expandFolderVM = (id) => {
     folderEvents.dispatchEvent(new CustomEvent('vm-pre-folder-expansion', {detail: { id }}));
-    const el = $(`tbody#vm_view > tr.updated > td span.outer.vms > span#folder-id-${id}`);
-    const state = el.attr('expanded') === "true";
-    if (state) {
-        el.siblings('div.folder-storage').append(el.parents().siblings('div.folder-showcase').children());
-        el.attr('expanded', 'false');
-    } else {
-        el.parents().siblings('div.folder-showcase').append(el.siblings('div.folder-storage').children());
-        el.attr('expanded', 'true');
+    const $folderOuter = $(`.folder-showcase-outer-${id}`);
+    const $folderShowcase = $(`.folder-showcase-${id}`);
+    const $folderStorage = $(`span#folder-id-${id}`).siblings('div.folder-storage');
+    const state = $folderOuter.attr('expanded') === "true";
+    
+    if(folderDebugMode) {
+        console.log(`[FV2_DEBUG] expandFolderVM (id: ${id}): Current state=${state}, toggling to ${!state}`);
     }
-    $(`tbody#vm_view .folder-showcase-outer-${id}`).attr('expanded', !state ? 'true' : 'false');
+    
+    if (state) {
+        // Collapsing: Move VMs back to storage and hide showcase
+        $folderStorage.append($folderShowcase.children());
+        $folderOuter.attr('expanded', 'false');
+        $(`span#folder-id-${id}`).attr('expanded', 'false');
+        
+        // Change indicator back to "+" and move to preview area
+        const $previewArea = $(`#folder-preview-${id}`);
+        const $contractIndicator = $folderShowcase.find('.folder-contract-indicator');
+        if ($contractIndicator.length) {
+            $contractIndicator.remove();
+        }
+        // Restore "+" indicator only if there are MORE than 3 VMs (not exactly 3)
+        if ($folderStorage.children().length > 3 && !$previewArea.find('.folder-more-indicator').length) {
+            const moreIndicator = $('<span class="folder-more-indicator" onclick="expandFolderVM(\'' + id + '\')" title="Click to expand folder">+</span>');
+            $previewArea.append(moreIndicator);
+        }
+    } else {
+        // Expanding: Move all VMs from storage to showcase
+        $folderShowcase.append($folderStorage.children());
+        $folderOuter.attr('expanded', 'true');
+        $(`span#folder-id-${id}`).attr('expanded', 'true');
+        
+        // Add "-" indicator to contract in the showcase area
+        if (!$folderShowcase.find('.folder-contract-indicator').length) {
+            const contractIndicator = $('<span class="folder-contract-indicator folder-more-indicator" onclick="expandFolderVM(\'' + id + '\')" title="Click to contract folder">-</span>');
+            $folderShowcase.append(contractIndicator);
+        }
+        
+        // Remove "+" indicator from preview area
+        $(`#folder-preview-${id} .folder-more-indicator`).remove();
+    }
+    
     if(globalFolders.vms) {
         globalFolders.vms[id].status.expanded = !state;
+        
+        // Persist VM folder expansion state to localStorage
+        try {
+            const folderStates = JSON.parse(localStorage.getItem('folderView2_vmStates') || '{}');
+            folderStates[id] = !state;
+            localStorage.setItem('folderView2_vmStates', JSON.stringify(folderStates));
+            console.log(`[FV2_DEBUG] expandFolderVM (id: ${id}): Persisted expanded state ${!state} to localStorage.`);
+        } catch (e) {
+            console.warn(`[FV2_DEBUG] expandFolderVM (id: ${id}): Failed to persist state to localStorage:`, e);
+        }
     }
     folderEvents.dispatchEvent(new CustomEvent('vm-post-folder-expansion', {detail: { id }}));
 };
@@ -1276,7 +1639,7 @@ const actionFolderVM = async (id, action) => {
 let loadedFolder = false;
 let globalFolders = {};
 const folderRegex = /^folder-/;
-let folderDebugMode = false;
+let folderDebugMode = false; // Debug mode disabled by default
 let folderDebugModeWindow = [];
 let folderReq = {
     docker: [],
@@ -1314,6 +1677,148 @@ window.loadlist = (x) => {
     }
     loadlist_original(x);
 };
+
+// Folders Only Toggle Functionality - Separate for Docker and VM
+let dockerFoldersOnlyMode = false;
+let vmFoldersOnlyMode = false;
+
+// Initialize folders-only toggles
+const initFoldersOnlyToggle = () => {
+    // Initialize Docker toggle - attach to Docker header row
+    const $dockerHeaderRow = $('tbody#docker_view tr:first-child td:first-child');
+    if ($dockerHeaderRow.length && !$dockerHeaderRow.find('#dockerFoldersOnlySwitch').length) {
+        const dockerToggleHtml = `
+            <div class="folders-only-toggle docker-toggle">
+                <span>Folders Only</span>
+                <div class="folders-only-switch" id="dockerFoldersOnlySwitch">
+                </div>
+            </div>
+        `;
+        $dockerHeaderRow.append(dockerToggleHtml);
+        
+        // Restore Docker state
+        try {
+            const savedState = localStorage.getItem('folderView2_dockerFoldersOnlyMode');
+            dockerFoldersOnlyMode = savedState === 'true';
+        } catch (e) {
+            console.warn('[FV2] Failed to restore Docker folders-only mode state:', e);
+        }
+        
+        // Add Docker click handler with event isolation
+        $('#dockerFoldersOnlySwitch').off('click').on('click', function(e) {
+            e.stopPropagation();
+            e.preventDefault();
+            toggleDockerFoldersOnlyMode();
+        });
+    }
+    
+    // Initialize VM toggle - attach to VM header row
+    const $vmHeaderRow = $('tbody#vm_view tr:first-child td:first-child');
+    if ($vmHeaderRow.length && !$vmHeaderRow.find('#vmFoldersOnlySwitch').length) {
+        const vmToggleHtml = `
+            <div class="folders-only-toggle vm-toggle">
+                <span>Folders Only</span>
+                <div class="folders-only-switch" id="vmFoldersOnlySwitch">
+                </div>
+            </div>
+        `;
+        $vmHeaderRow.append(vmToggleHtml);
+        
+        // Restore VM state
+        try {
+            const savedState = localStorage.getItem('folderView2_vmFoldersOnlyMode');
+            vmFoldersOnlyMode = savedState === 'true';
+        } catch (e) {
+            console.warn('[FV2] Failed to restore VM folders-only mode state:', e);
+        }
+        
+        // Add VM click handler with event isolation
+        $('#vmFoldersOnlySwitch').off('click').on('click', function(e) {
+            e.stopPropagation();
+            e.preventDefault();
+            toggleVMFoldersOnlyMode();
+        });
+    }
+    
+    // Update initial states
+    updateFoldersOnlyMode();
+};
+
+// Toggle Docker folders-only mode
+const toggleDockerFoldersOnlyMode = () => {
+    dockerFoldersOnlyMode = !dockerFoldersOnlyMode;
+    console.log('[FV2] Docker toggle clicked. New state:', dockerFoldersOnlyMode);
+    
+    // Save state to localStorage
+    try {
+        localStorage.setItem('folderView2_dockerFoldersOnlyMode', dockerFoldersOnlyMode.toString());
+    } catch (e) {
+        console.warn('[FV2] Failed to save Docker folders-only mode state:', e);
+    }
+    
+    updateFoldersOnlyMode();
+};
+
+// Toggle VM folders-only mode
+const toggleVMFoldersOnlyMode = () => {
+    vmFoldersOnlyMode = !vmFoldersOnlyMode;
+    console.log('[FV2] VM toggle clicked. New state:', vmFoldersOnlyMode);
+    
+    // Save state to localStorage
+    try {
+        localStorage.setItem('folderView2_vmFoldersOnlyMode', vmFoldersOnlyMode.toString());
+    } catch (e) {
+        console.warn('[FV2] Failed to save VM folders-only mode state:', e);
+    }
+    
+    updateFoldersOnlyMode();
+};
+
+// Update the visual state and layout
+const updateFoldersOnlyMode = () => {
+    const $body = $('body');
+    const $dockerSwitch = $('#dockerFoldersOnlySwitch');
+    const $vmSwitch = $('#vmFoldersOnlySwitch');
+    
+    console.log('[FV2] updateFoldersOnlyMode called. Docker:', dockerFoldersOnlyMode, 'VM:', vmFoldersOnlyMode);
+    
+    // Update Docker section
+    if (dockerFoldersOnlyMode) {
+        $body.addClass('docker-folders-only-mode');
+        $dockerSwitch.addClass('active');
+        console.log('[FV2] Docker folders-only mode ENABLED');
+    } else {
+        $body.removeClass('docker-folders-only-mode');
+        $dockerSwitch.removeClass('active');
+        console.log('[FV2] Docker folders-only mode DISABLED');
+    }
+    
+    // Update VM section
+    if (vmFoldersOnlyMode) {
+        $body.addClass('vm-folders-only-mode');
+        $vmSwitch.addClass('active');
+        console.log('[FV2] VM folders-only mode ENABLED');
+    } else {
+        $body.removeClass('vm-folders-only-mode');
+        $vmSwitch.removeClass('active');
+        console.log('[FV2] VM folders-only mode DISABLED');
+    }
+    
+    console.log('[FV2] Body classes after update:', $body.attr('class'));
+};
+
+// Initialize toggle when DOM is ready
+$(document).ready(() => {
+    // Multiple initialization attempts to ensure it works
+    setTimeout(initFoldersOnlyToggle, 500);
+    setTimeout(initFoldersOnlyToggle, 1000);
+    setTimeout(initFoldersOnlyToggle, 2000);
+});
+
+// Also initialize after folder creation is complete
+$(document).on('docker-post-folders-creation vm-post-folders-creation', () => {
+    setTimeout(initFoldersOnlyToggle, 100);
+});
 
 // this is needed to trigger the funtion to create the folders
 $.ajaxPrefilter((options, originalOptions, jqXHR) => {

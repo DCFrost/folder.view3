@@ -3,6 +3,7 @@
 ## What is FolderView2?
 
 Original creator: [**scolcipitato**](https://github.com/scolcipitato/folder.view)
+Maintained by: [**VladoPortos**](https://github.com/VladoPortos/folder.view2)
 
 FolderView2 lets you create folders for grouping Dockers and VMs together to help with organization. Especially useful if you're using docker-compose.
 Getting Started: A new button named "Add Folder" will appear at the bottom of the docker/VM tab next to "Add Container/VM".

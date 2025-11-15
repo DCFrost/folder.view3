@@ -27,7 +27,7 @@ Example
     scolcipitato.dashboard-vm.js // Will work on the dashboard and vms tabs
     scolcipitato.dashboard-docker-vm.js // Will work on the dashboard,docker and vms tabs
 
-    0.scolcipitato.dashboard.css // Will only work on the dashboard
+    scolcipitato.dashboard.css // Will only work on the dashboard
     scolcipitato-dashboard.css // Will not work
     
 ```

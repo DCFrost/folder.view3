@@ -1,0 +1,53 @@
+<?xml version="1.0" standalone="yes"?>
+<!DOCTYPE PLUGIN [
+<!ENTITY name "{{ package_name }}">
+<!ENTITY author "{{ author }}">
+<!ENTITY github "{{ github }}">
+<!ENTITY launch "{{ launch }}">
+<!ENTITY plugdir "/usr/local/emhttp/plugins/&name;">
+<!ENTITY pluginURL "https://raw.githubusercontent.com/{{ github }}/main/{{ package_name }}.plg">
+<!ENTITY version "{{ env['PLUGIN_VERSION'] }}">
+<!ENTITY md5 "{{ env['PLUGIN_CHECKSUM'] }}">
+]>
+
+<PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" icon="{{ icon }}" support="{{ support }}" min="{{ min }}">
+    <CHANGES>
+<![CDATA[
+{{ env['PLUGIN_CHANGELOG'] }}
+
+For older releases, see https://github.com/{{ env['GITHUB_REPOSITORY'] }}/releases
+]]>
+    </CHANGES>
+
+    <!-- New source file -->
+    <FILE Name="/boot/config/plugins/&name;/&name;-&version;.txz" Run="upgradepkg --install-new">
+        <URL>https://github.com/{{ github }}/releases/download/{{ env['PLUGIN_VERSION'] }}/{{ package_name }}-{{ env['PLUGIN_VERSION'] }}.txz</URL>
+        <MD5>&md5;</MD5>
+    </FILE>
+
+    <!-- Post install -->
+    <FILE Run="/bin/bash">
+        <INLINE>
+            mkdir -p /boot/config/plugins/&name;/styles
+            mkdir -p /boot/config/plugins/&name;/scripts
+            rm -f $(ls /boot/config/plugins/&name;/&name;*.txz | grep -v '&version;')
+            echo "&version;" > /boot/config/plugins/&name;/version
+            echo ""
+            echo "----------------------------------------------------"
+            echo " &name; has been installed."
+            echo " Version: &version;"
+            echo "----------------------------------------------------"
+            echo ""
+        </INLINE>
+    </FILE>
+
+    <!-- Remove the plugin -->
+    <FILE Run="/bin/bash" Method="remove">
+        <INLINE>
+            removepkg &name;-&version;
+            rm -rf &plugdir;
+            rm -rf /boot/config/plugins/&name;
+        </INLINE>
+    </FILE>
+
+</PLUGIN>

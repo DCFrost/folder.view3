@@ -1,0 +1,11 @@
+{
+  "name": "folder.view2",
+  "package_name": "folder.view2",
+  "author": "VladoPortos",
+  "github": "DCFrost/folder.view3",
+  "min": "7.2.0",
+  "icon": "folder-open-o",
+  "launch": "Settings/FolderView2",
+  "support": "https://github.com/DCFrost/folder.view3",
+  "_comment": "Originally created by scolcipitato, maintained by VladoPortos"
+}

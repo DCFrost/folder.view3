@@ -451,14 +451,13 @@ const createFolder = (folder, id, positionInMainOrder, liveOrderArray, container
 
             let CPU = []; let MEM = []; let charts = []; let tootltipObserver;
             if (FOLDER_VIEW_DEBUG_MODE) console.log(`[FV2_DEBUG] createFolder (id: ${id}), container ${container_name_in_folder}: Initialized CPU, MEM, charts, tootltipObserver for tooltip.`);
-            const graphListener = (e) => {
-                if (FOLDER_VIEW_DEBUG_MODE) console.log(`[FV2_DEBUG] graphListener (for ct: ${ct.shortId}): Received message:`, e.data ? e.data : e); // SSE e.data
+            const graphListener = (msgData) => {
+                if (FOLDER_VIEW_DEBUG_MODE) console.log(`[FV2_DEBUG] graphListener (for ct: ${ct.shortId}): Received message:`, msgData);
                 let now = Date.now();
                 try {
-                    let dataToParse = e.data ? e.data : e; // Handle SSE vs direct string
-                    let loadMatch = dataToParse.match(new RegExp(`^${ct.shortId}\;.*\;.*\ \/\ .*$`, 'm'));
+                    let loadMatch = msgData.match(new RegExp(`^${ct.shortId}[^;]*\;.*\;.*\ \/\ .*$`, 'm'));
                     if (!loadMatch) {
-                        if (FOLDER_VIEW_DEBUG_MODE) console.warn(`[FV2_DEBUG] graphListener (for ct: ${ct.shortId}): No match for regex. Data: `, dataToParse);
+                        if (FOLDER_VIEW_DEBUG_MODE) console.warn(`[FV2_DEBUG] graphListener (for ct: ${ct.shortId}): No match for regex. Data sample:`, msgData.substring(0, 100));
                         CPU.push({ x: now, y: 0 });
                         MEM.push({ x: now, y: 0 });
                         return;
@@ -479,7 +478,7 @@ const createFolder = (folder, id, positionInMainOrder, liveOrderArray, container
                     });
                     if (FOLDER_VIEW_DEBUG_MODE) console.log(`[FV2_DEBUG] graphListener (for ct: ${ct.shortId}): Parsed load:`, {cpu: load.cpu, mem: load.mem}, "Pushed to CPU/MEM arrays.");
                 } catch (error) {
-                    if (FOLDER_VIEW_DEBUG_MODE) console.error(`[FV2_DEBUG] graphListener (for ct: ${ct.shortId}): Error parsing load data.`, error, "Original data:", e.data ? e.data : e);
+                    if (FOLDER_VIEW_DEBUG_MODE) console.error(`[FV2_DEBUG] graphListener (for ct: ${ct.shortId}): Error parsing load data.`, error, "Original data:", msgData);
                     CPU.push({
                         x: now,
                         y: 0
@@ -1601,42 +1600,55 @@ $.get('/plugins/folder.view2/server/cpu.php').promise().then((data) => {
     cpus = parseInt(data);
     if (FOLDER_VIEW_DEBUG_MODE) console.log(`[FV2_DEBUG] CPU count received: ${cpus}. Attaching SSE listener for dockerload.`);
     // Attach to the scoket and process the data
-    dockerload.addEventListener('message', (e_sse) => { // Renamed e to e_sse to avoid conflict
-        // if (FOLDER_VIEW_DEBUG_MODE) console.log('[FV2_DEBUG] dockerload SSE: Message event received. Event object:', e_sse);
-
-        // --- START OF FIX ---
-        if (typeof e_sse.data !== 'string' || !e_sse.data.trim()) {
-            // if (FOLDER_VIEW_DEBUG_MODE) {
-            //     console.warn('[FV2_DEBUG] dockerload SSE: Received message without valid string data or empty data. Skipping. Data was:', e_sse.data);
-            // }
-            return; // Skip processing if data is not a string or is empty
+    dockerload.addEventListener('message', (msgData) => { 
+        if (FOLDER_VIEW_DEBUG_MODE) {
+            console.log('[FV2_DEBUG] dockerload SSE: Message received. Data:', msgData);
+            console.log('[FV2_DEBUG] dockerload SSE: typeof msgData:', typeof msgData);
         }
-        // --- END OF FIX ---
 
-        if (FOLDER_VIEW_DEBUG_MODE) console.log('[FV2_DEBUG] dockerload SSE: Message received (e_sse.data):', e_sse.data);
+        if (typeof msgData !== 'string' || !msgData.trim()) {
+            // if (FOLDER_VIEW_DEBUG_MODE) {
+            //     console.warn('[FV2_DEBUG] dockerload SSE: Received invalid data. Skipping. Data was:', msgData);
+            // }
+            return; 
+        }
+
+        if (FOLDER_VIEW_DEBUG_MODE) console.log('[FV2_DEBUG] dockerload SSE: Processing message data...');
         let load = {};
-        const lines = e_sse.data.split('\n');
-        lines.forEach((line_str) => { // Renamed e to line_str
-            if (!line_str.trim()) return; // Skip empty lines
+        const lines = msgData.split('\n');
+        lines.forEach((line_str) => { 
+            if (!line_str.trim()) return; 
             const exp = line_str.split(';');
-            if (exp.length >= 3) { // Basic validation
-                load[exp[0]] = {
+            if (exp.length >= 3) { 
+                const containerId = exp[0];
+                const shortId = containerId.substring(0, 12);
+                const loadData = {
                     cpu: exp[1],
                     mem: exp[2].split(' / ')
                 };
+                load[containerId] = loadData; 
+                if (containerId.length > 12) {
+                    load[shortId] = loadData; 
+                }
             } else {
                 if (FOLDER_VIEW_DEBUG_MODE) console.warn('[FV2_DEBUG] dockerload SSE: Malformed line:', line_str);
             }
         });
-        if (FOLDER_VIEW_DEBUG_MODE) console.log('[FV2_DEBUG] dockerload SSE: Parsed load data:', {...load});
+        if (FOLDER_VIEW_DEBUG_MODE) {
+            console.log('[FV2_DEBUG] dockerload SSE: Parsed load data show first 3 keys:', Object.keys(load).slice(0, 3));
+            console.log('[FV2_DEBUG] dockerload SSE: Sample ID length:', Object.keys(load)[0]?.length);
+        }
 
         for (const [id, value] of Object.entries(globalFolders)) {
             let loadCpu = 0;
-            let totalMemB = 0; // Use Bytes for sum then convert
-            let loadMemB = 0;  // Use Bytes for sum then convert
+            let totalMemB = 0;  
+            let loadMemB = 0;  
 
             if (!value || !value.containers) {
-                if (FOLDER_VIEW_DEBUG_MODE) console.warn(`[FV2_DEBUG] dockerload SSE: Folder ${id} or its containers not found in globalFolders.`);
+                if (FOLDER_VIEW_DEBUG_MODE) {
+                    console.warn(`[FV2_DEBUG] dockerload SSE: Folder ${id} or its containers not found in globalFolders.`);
+                    console.warn(`[FV2_DEBUG] dockerload SSE: Folder ${id} structure:`, value ? {hasContainers: !!value.containers, keys: Object.keys(value)} : 'value is null/undefined');
+                }
                 continue;
             }
 
@@ -1644,13 +1656,13 @@ $.get('/plugins/folder.view2/server/cpu.php').promise().then((data) => {
                 const containerShortId = cvalue.id;
                 const curLoad = load[containerShortId] || { cpu: '0.00%', mem: ['0B', '0B'] };
                 if (FOLDER_VIEW_DEBUG_MODE && !load[containerShortId]) {
-                    // console.log(`[FV2_DEBUG] dockerload SSE (folder ${id}): No direct load data for ${containerShortId} (name: ${cid_name}), using default.`);
+                    //console.warn(`[FV2_DEBUG] dockerload SSE (folder ${id}): No load data for container ${containerShortId} (name: ${cid_name}). Available IDs in load:`, Object.keys(load).slice(0, 5));
                 }
 
-                loadCpu += parseFloat(curLoad.cpu.replace('%', '')) / cpus; // Already per core from SSE
+                loadCpu += parseFloat(curLoad.cpu.replace('%', '')) / cpus;  
                 loadMemB += memToB(curLoad.mem[0]);
                 let tempTotalMem = memToB(curLoad.mem[1]);
-                totalMemB = Math.max(totalMemB, tempTotalMem); // Max of individual limits, or sum if preferred
+                totalMemB += tempTotalMem; 
             }
             if (FOLDER_VIEW_DEBUG_MODE) console.log(`[FV2_DEBUG] dockerload SSE (folder ${id}): Calculated totals - loadCpu: ${loadCpu.toFixed(2)}%, loadMemB: ${loadMemB}, totalMemB: ${totalMemB}`);
 

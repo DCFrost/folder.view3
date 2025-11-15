@@ -1,0 +1,60 @@
+name: Code Quality - PHP Lint
+
+on:
+  push:
+    branches:
+      - main
+      - dev-*
+      - unraid-7.2-migration
+    paths:
+      - '**.php'
+      - '.php-cs-fixer.dist.php'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '**.php'
+      - '.php-cs-fixer.dist.php'
+
+jobs:
+  php-cs-fixer:
+    name: PHP-CS-Fixer (PSR-12)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: mbstring, xml, ctype, iconv, json
+          coverage: none
+
+      - name: Get Composer Cache Directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install PHP-CS-Fixer
+        run: composer global require friendsofphp/php-cs-fixer
+
+      - name: Add Composer to PATH
+        run: echo "$(composer config home)/vendor/bin" >> $GITHUB_PATH
+
+      - name: Run PHP-CS-Fixer (Dry Run)
+        run: php-cs-fixer fix --dry-run --diff --verbose
+
+      - name: Fail if formatting issues found
+        if: failure()
+        run: |
+          echo "::error::PHP-CS-Fixer found formatting issues."
+          echo "::notice::Run 'php-cs-fixer fix' locally to auto-format code."
+          exit 1

@@ -1208,10 +1208,12 @@ $.get('/plugins/folder.view2/server/cpu.php').promise().then((data) => {
         let load = {};
         e.split('\n').forEach((e) => {
             const exp = e.split(';');
-            load[exp[0]] = {
-                cpu: exp[1],
-                mem: exp[2].split(' / ')
-            };
+            if (exp.length >= 3) {
+                load[exp[0]] = {
+                    cpu: exp[1],
+                    mem: exp[2].split(' / ')
+                };
+            }
         });
         for (const [id, value] of Object.entries(globalFolders)) {
             let loadCpu = 0;
